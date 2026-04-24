@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# AWS SAM build artifacts
+backend/.aws-sam/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/package-lock.json
+frontend/.env.local
+frontend/.vercel/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Claude
+.claude/

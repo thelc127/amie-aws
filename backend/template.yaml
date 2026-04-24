@@ -1,0 +1,346 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AMIE – Academic Manuscript IP Evaluator
+  Flat backend layout: agents/ tools/ utils/ lambda_functions/ all siblings under backend/
+
+Globals:
+  Function:
+    Runtime: python3.10
+    Timeout: 900
+    MemorySize: 1024
+    Environment:
+      Variables:
+        AWS_ACCOUNT_ID: !Ref AWS::AccountId
+        MANUSCRIPT_BUCKET: !Ref ManuscriptBucket
+        TASK_BUCKET: !Ref TaskBucket
+        BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        PERPLEXITY_API_KEY: "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"
+        PERPLEXITY_PATENTS_ENDPOINT: "https://api.perplexity.ai/chat/completions"
+        PERPLEXITY_MAX_RESULTS: "10"
+        PATENT_BACKEND: "perplexity"
+
+Parameters:
+  PerplexityApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Perplexity API key (leave blank to use mock results)
+
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: CORS origin (use your frontend domain in production)
+
+Resources:
+
+  ManuscriptBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "amie-manuscripts-${AWS::AccountId}-${AWS::Region}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: [!Ref AllowedOrigin]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteUploadsAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: "uploads/"
+
+  TaskBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "amie-tasks-${AWS::AccountId}-${AWS::Region}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteTasksAfter7Days
+            Status: Enabled
+            ExpirationInDays: 7
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AmiePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:ListBucket]
+                Resource:
+                  - !GetAtt ManuscriptBucket.Arn
+                  - !Sub "${ManuscriptBucket.Arn}/*"
+                  - !GetAtt TaskBucket.Arn
+                  - !Sub "${TaskBucket.Arn}/*"
+              - Sid: BedrockAccess
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource: "*"
+              - Sid: LambdaInvoke
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:amie-worker"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:amie-idca"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:amie-naa"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:amie-aa"
+
+  # CodeUri: ./ packages the entire backend/ directory.
+  # Both Lambdas share the same zip; handler.py adds backend/ root to sys.path
+  # at runtime so agents/, tools/, and utils/ are importable as top-level packages.
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: amie-api
+      CodeUri: ./
+      Handler: lambda_functions/handler.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          WORKER_FUNCTION_NAME: amie-worker
+      Events:
+        AgentCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AmieApi
+            Path: /.well-known/agent-card.json
+            Method: GET
+        UploadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AmieApi
+            Path: /upload-url
+            Method: POST
+        CreateTask:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AmieApi
+            Path: /a2a/tasks
+            Method: POST
+        GetTask:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AmieApi
+            Path: /a2a/tasks/{task_id}
+            Method: GET
+        Options:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AmieApi
+            Path: /{proxy+}
+            Method: OPTIONS
+
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: amie-worker
+      CodeUri: ./
+      Handler: lambda_functions/handler.worker_handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 900
+      MemorySize: 2048
+      Environment:
+        Variables:
+          IDCA_AGENT_URL: !Sub "https://${IdcaApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+          NAA_AGENT_URL:  !Sub "https://${NaaApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+          AA_AGENT_URL:   !Sub "https://${AaApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+
+  # ── IDCA Agent Lambda + API ───────────────────────────────────────────────
+
+  IdcaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: amie-idca
+      CodeUri: ./
+      Handler: agents/idca.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        IdcaTasks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref IdcaApi
+            Path: /tasks
+            Method: POST
+        IdcaAgentCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref IdcaApi
+            Path: /.well-known/agent-card.json
+            Method: GET
+        IdcaOptions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref IdcaApi
+            Path: /{proxy+}
+            Method: OPTIONS
+
+  IdcaApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowHeaders: [Content-Type]
+        AllowMethods: [POST, GET, OPTIONS]
+
+  IdcaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/amie-idca
+      RetentionInDays: 14
+
+  # ── NAA Agent Lambda + API ────────────────────────────────────────────────
+
+  NaaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: amie-naa
+      CodeUri: ./
+      Handler: agents/naa.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        NaaTasks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref NaaApi
+            Path: /tasks
+            Method: POST
+        NaaAgentCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref NaaApi
+            Path: /.well-known/agent-card.json
+            Method: GET
+        NaaOptions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref NaaApi
+            Path: /{proxy+}
+            Method: OPTIONS
+
+  NaaApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowHeaders: [Content-Type]
+        AllowMethods: [POST, GET, OPTIONS]
+
+  NaaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/amie-naa
+      RetentionInDays: 14
+
+  # ── AA Agent Lambda + API ─────────────────────────────────────────────────
+
+  AaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: amie-aa
+      CodeUri: ./
+      Handler: agents/aa.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        AaTasks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AaApi
+            Path: /tasks
+            Method: POST
+        AaAgentCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AaApi
+            Path: /.well-known/agent-card.json
+            Method: GET
+        AaOptions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AaApi
+            Path: /{proxy+}
+            Method: OPTIONS
+
+  AaApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowHeaders: [Content-Type]
+        AllowMethods: [POST, GET, OPTIONS]
+
+  AaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/amie-aa
+      RetentionInDays: 14
+
+  AmieApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowHeaders: [Content-Type, X-Api-Key, Authorization]
+        AllowMethods: [GET, POST, OPTIONS]
+        MaxAge: 300
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/amie-api
+      RetentionInDays: 14
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/amie-worker
+      RetentionInDays: 14
+
+Outputs:
+  ApiUrl:
+    Description: Set this as NEXT_PUBLIC_API_URL in frontend/src/.env.local
+    Value: !Sub "https://${AmieApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: AmieApiUrl
+
+  IdcaAgentUrl:
+    Description: IDCA agent endpoint (POST /tasks)
+    Value: !Sub "https://${IdcaApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: AmieIdcaAgentUrl
+
+  NaaAgentUrl:
+    Description: NAA agent endpoint (POST /tasks)
+    Value: !Sub "https://${NaaApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: AmieNaaAgentUrl
+
+  AaAgentUrl:
+    Description: AA agent endpoint (POST /tasks)
+    Value: !Sub "https://${AaApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: AmieAaAgentUrl
+
+  ManuscriptBucketName:
+    Value: !Ref ManuscriptBucket
+
+  TaskBucketName:
+    Value: !Ref TaskBucket

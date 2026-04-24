@@ -1,0 +1,8 @@
+# AMIE Lambda dependencies
+# Location: backend/utils/requirements.txt
+# Run: pip install -r backend/utils/requirements.txt
+
+PyMuPDF==1.24.3          # PDF text extraction (import as fitz)
+pdfminer.six==20221105   # Fallback PDF extraction
+boto3>=1.34.0            # AWS SDK (pre-installed in Lambda; pin for local dev)
+requests>=2.31.0         # HTTP client for A2A inter-agent calls
