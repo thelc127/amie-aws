@@ -1,4 +1,6 @@
-# AMIE – Academic Manuscript IP Evaluator: Getting Started Guide
+# AMIE – Academic Manuscript IP Evaluator
+
+### Getting Started Guide
 
 AMIE is a multi-agent system designed to evaluate academic manuscripts for patentability. It uses a Next.js frontend and an AWS-based serverless backend with specialized AI agents (IDCA, NAA, AA).
 
