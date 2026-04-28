@@ -4,6 +4,9 @@
 
 AMIE is a multi-agent system designed to evaluate academic manuscripts for patentability. It has an AWS-based backend with specialized AI agents (IDCA, NAA, AA).
 
+<img width="919" height="416" alt="image" src="https://github.com/user-attachments/assets/ab439df7-0ecc-4de1-97ab-2ea38abd6382" />
+
+
 ---
 
 ## 1. Prerequisites
