@@ -303,7 +303,7 @@ export default function AMIEPage() {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">AMIE</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">AMIE Software</h1>
             <p className="text-xs text-slate-500">Academic Manuscript IP Evaluator </p>
           </div>
           <span className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-semibold">
