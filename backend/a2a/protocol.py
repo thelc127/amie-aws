@@ -1,11 +1,21 @@
 """
 a2a/protocol.py
+---------------
 Minimal A2A protocol layer for AMIE.
+
+Defines the standard message format that all agents use to
+communicate with each other through the Ingestion orchestrator.
+
+A2A Task lifecycle:
+  pending → running → complete | error
 """
 import uuid
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
+
+# ── Task Status Constants ─────────────────────────────────────────────────────
 
 class TaskStatus:
     PENDING  = "pending"
@@ -14,10 +24,16 @@ class TaskStatus:
     ERROR    = "error"
 
 
+# ── Core A2A Data Structures ──────────────────────────────────────────────────
+
 @dataclass
 class A2ATask:
-    agent:      str
-    input:      dict
+    """
+    A single unit of work sent from orchestrator to an agent.
+    This is what the Ingestion Agent sends to IDCA, NAA, AA.
+    """
+    agent:      str                        # "idca" | "naa" | "aa"
+    input:      dict                       # agent-specific input payload
     task_id:    str   = field(default_factory=lambda: str(uuid.uuid4()))
     status:     str   = TaskStatus.PENDING
     created_at: float = field(default_factory=time.time)
@@ -31,14 +47,27 @@ class A2ATask:
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "A2ATask":
+        return cls(
+            agent      = data["agent"],
+            input      = data["input"],
+            task_id    = data.get("task_id", str(uuid.uuid4())),
+            status     = data.get("status", TaskStatus.PENDING),
+            created_at = data.get("created_at", time.time()),
+        )
+
 
 @dataclass
 class A2AResponse:
+    """
+    Standard response returned by every agent after processing a task.
+    """
     task_id: str
     agent:   str
-    status:  str
-    output:  dict
-    error:   str = ""
+    status:  str        # complete | error
+    output:  dict       # agent-specific result payload
+    error:   str = ""   # populated only if status = error
 
     def to_dict(self) -> dict:
         return {
@@ -49,13 +78,27 @@ class A2AResponse:
             "error":   self.error,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "A2AResponse":
+        return cls(
+            task_id = data["task_id"],
+            agent   = data["agent"],
+            status  = data["status"],
+            output  = data.get("output", {}),
+            error   = data.get("error", ""),
+        )
+
 
 @dataclass
 class AgentCard:
-    name:          str
-    description:   str
-    version:       str
-    input_schema:  dict
+    """
+    Describes an agent's identity and capabilities.
+    Exposed at /.well-known/{agent}-agent-card.json
+    """
+    name:         str
+    description:  str
+    version:      str
+    input_schema: dict
     output_schema: dict
 
     def to_dict(self) -> dict:
@@ -68,52 +111,63 @@ class AgentCard:
         }
 
 
+# ── Agent Card Definitions ────────────────────────────────────────────────────
+
 IDCA_CARD = AgentCard(
     name        = "IDCA",
-    description = "Invention Detection and Classification Agent",
+    description = "Invention Detection and Classification Agent — determines whether a manuscript discloses a patentable invention",
     version     = "1.0.0",
     input_schema  = {"manuscript_text": "string"},
     output_schema = {
-        "sd": "Present | Implied | Absent",
+        "sd":                  "Present | Implied | Absent",
         "structural_synopsis": "string",
-        "source_citation": "string",
-        "fields_map": "list[string]",
-        "reasoning": "string",
+        "source_citation":     "string",
+        "fields_map":          "list[string]",
+        "reasoning":           "string",
     },
 )
 
 NAA_CARD = AgentCard(
     name        = "NAA",
-    description = "Novelty Assessment Agent",
+    description = "Novelty Assessment Agent — builds prior art search queries and scores references against the invention structure",
     version     = "1.0.0",
-    input_schema  = {"manuscript_text": "string", "idca_result": "object"},
+    input_schema  = {
+        "manuscript_text": "string",
+        "idca_result":     "object",
+    },
     output_schema = {
-        "ss": "list[object]",
-        "ss_synopsis": "string",
-        "ucs": "string",
+        "ss":           "list[object]",
+        "ss_synopsis":  "string",
+        "ucs":          "string",
         "ssr_criteria": "object",
-        "references": "list[object]",
+        "references":   "list[object]",
     },
 )
 
 AA_CARD = AgentCard(
     name        = "AA",
-    description = "Aggregation Agent",
+    description = "Aggregation Agent — compiles IDCA and NAA results into a Final Reference Table and novelty risk report",
     version     = "1.0.0",
-    input_schema  = {"idca_result": "object", "naa_result": "object | null"},
+    input_schema  = {
+        "idca_result": "object",
+        "naa_result":  "object | null",
+    },
     output_schema = {
-        "context_header": "object",
+        "context_header":       "object",
         "final_reference_table": "list[object]",
-        "executive_summary": "string",
-        "novelty_risk": "High | Medium | Low | Indeterminate",
+        "executive_summary":    "string",
+        "novelty_risk":         "High | Medium | Low | Indeterminate",
     },
 )
 
 INGESTION_CARD = AgentCard(
     name        = "IngestionAgent",
-    description = "Orchestrator — coordinates IDCA → NAA → AA pipeline via A2A protocol",
+    description = "Orchestrator — receives manuscript, coordinates IDCA → NAA → AA pipeline via A2A protocol, returns complete novelty assessment",
     version     = "1.0.0",
-    input_schema  = {"s3_key": "string", "bucket": "string"},
+    input_schema  = {
+        "s3_key": "string",
+        "bucket": "string",
+    },
     output_schema = {
         "task_id": "string",
         "status":  "pending | running | idca_complete | naa_complete | complete | error",
@@ -123,6 +177,7 @@ INGESTION_CARD = AgentCard(
     },
 )
 
+# Registry — used by handler.py to serve agent cards
 AGENT_CARDS = {
     "idca":      IDCA_CARD,
     "naa":       NAA_CARD,

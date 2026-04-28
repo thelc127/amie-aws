@@ -8,6 +8,11 @@ __pycache__/
 # AWS SAM build artifacts
 backend/.aws-sam/
 
+# Environment variables (never commit real secrets)
+.env
+.env.local
+.env.*.local
+
 # Frontend
 frontend/node_modules/
 frontend/.next/

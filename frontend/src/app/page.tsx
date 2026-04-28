@@ -149,24 +149,24 @@ function IconExternalLink() {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const RISK_COLORS: Record<string, string> = {
-  High:          "bg-red-100 text-red-800 border-red-200",
-  Medium:        "bg-amber-100 text-amber-800 border-amber-200",
-  Low:           "bg-green-100 text-green-800 border-green-200",
+  High: "bg-red-100 text-red-800 border-red-200",
+  Medium: "bg-amber-100 text-amber-800 border-amber-200",
+  Low: "bg-green-100 text-green-800 border-green-200",
   Indeterminate: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const SD_COLORS: Record<string, string> = {
   Present: "text-emerald-700 bg-emerald-50 border-emerald-200",
   Implied: "text-amber-700 bg-amber-50 border-amber-200",
-  Absent:  "text-slate-600 bg-slate-50 border-slate-200",
+  Absent: "text-slate-600 bg-slate-50 border-slate-200",
 };
 
 const STATUS_STEPS = [
-  { key: "pending",       label: "Queued"         },
-  { key: "running",       label: "Extracting PDF" },
-  { key: "idca_complete", label: "IDCA Complete"  },
-  { key: "naa_complete",  label: "NAA Complete"   },
-  { key: "complete",      label: "Done"           },
+  { key: "pending", label: "Queued" },
+  { key: "running", label: "Extracting PDF" },
+  { key: "idca_complete", label: "IDCA Complete" },
+  { key: "naa_complete", label: "NAA Complete" },
+  { key: "complete", label: "Done" },
 ];
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -216,11 +216,11 @@ function StatusProgress({ status }: { status: string }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function AMIEPage() {
-  const [file, setFile]               = useState<File | null>(null);
-  const [dragging, setDragging]       = useState(false);
-  const [task, setTask]               = useState<Task | null>(null);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [task, setTask] = useState<Task | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [expandedRef, setExpandedRef] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -294,7 +294,7 @@ export default function AMIEPage() {
   }
 
   const isRunning = loading || (task != null && !["complete", "error"].includes(task.status));
-  const refs      = task?.aa?.final_reference_table ?? [];
+  const refs = task?.aa?.final_reference_table ?? [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50">
@@ -404,9 +404,8 @@ export default function AMIEPage() {
             <StatusProgress status={task.status} />
             <p className="text-xs text-slate-400 mt-3">
               {["complete", "error"].includes(task.status)
-                ? "Evaluation complete · Task ID: "
-                : "Polling every 4s · Task ID: "}
-              <span className="font-mono">{task.task_id}</span>
+                ? "Evaluation complete"
+                : "Polling every 4s"}
             </p>
           </div>
         )}

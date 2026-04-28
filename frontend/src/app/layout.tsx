@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AMIE – Academic Manuscript IP Evaluator",
+  title: "AM – Academic Manuscript IP Evaluator",
   description: "Structural Search and Overlap Workflow for academic manuscript novelty evaluation",
 };
 
