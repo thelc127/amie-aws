@@ -2,7 +2,7 @@
 
 ### Getting Started Guide
 
-AMIE is a multi-agent system designed to evaluate academic manuscripts for patentability. It uses a Next.js frontend and an AWS-based serverless backend with specialized AI agents (IDCA, NAA, AA).
+AMIE is a multi-agent system designed to evaluate academic manuscripts for patentability. It has an AWS-based backend with specialized AI agents (IDCA, NAA, AA).
 
 ---
 
