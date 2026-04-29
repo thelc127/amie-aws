@@ -23,7 +23,7 @@ _ENDPOINT = os.environ.get(
     "PERPLEXITY_PATENTS_ENDPOINT",
     "https://api.perplexity.ai/chat/completions",
 )
-_MAX_RESULTS = int(os.environ.get("PERPLEXITY_MAX_RESULTS", "10"))
+_MAX_RESULTS = int(os.environ.get("PERPLEXITY_MAX_RESULTS", "20"))
 _BACKEND = os.environ.get("PATENT_BACKEND", "perplexity")  # perplexity | mock
 
 
@@ -70,7 +70,7 @@ def _perplexity_search(query: str) -> list[dict]:
             {"role": "system", "content": system_msg},
             {"role": "user", "content": f"Find prior art for: {query}"},
         ],
-        "max_tokens": 3000,
+        "max_tokens": 6000,
         "return_citations": True,
     }
 
