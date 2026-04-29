@@ -146,6 +146,7 @@ SAM reuses the parameters from `samconfig.toml` on subsequent deploys.
 - **[docs/02-Configuration-vs-Code.md](docs/02-Configuration-vs-Code.md)**: Where configuration lives vs. where logic lives
 - **[docs/03-A2A-Protocol.md](docs/03-A2A-Protocol.md)**: How the agents communicate
 - **[docs/04-Deployment.md](docs/04-Deployment.md)**: Full deployment walkthrough with Vercel webhook and A2A verification
+- **[docs/05-CloudShell-Diagnostics.md](docs/05-CloudShell-Diagnostics.md)**: AWS CloudShell commands for checking deployments
 - **[docs/architecture-diagrams.md](docs/architecture-diagrams.md)**: Mermaid diagrams of the system architecture
 - **[docs/DOCUMENTATION.md](docs/DOCUMENTATION.md)**: Detailed A2A protocol reference
 

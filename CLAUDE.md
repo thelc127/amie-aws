@@ -77,6 +77,7 @@ Production: deploy to Vercel with Root Directory set to `frontend`.
 - `docs/02-Configuration-vs-Code.md` -- where configuration lives vs. where logic lives
 - `docs/03-A2A-Protocol.md` -- how the agents communicate
 - `docs/04-Deployment.md` -- full deployment walkthrough
+- `docs/05-CloudShell-Diagnostics.md` -- AWS CloudShell commands for checking deployments
 - `docs/architecture-diagrams.md` -- Mermaid diagrams
 - `docs/DOCUMENTATION.md` -- A2A protocol reference
 - `docs/example_calls.sh` -- executable API walkthrough
