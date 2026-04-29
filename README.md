@@ -1,133 +1,150 @@
-# AMIE – Academic Manuscript IP Evaluator
+# AMIE: Academic Manuscript IP Evaluator
 
-### Getting Started Guide
+AMIE is a multi-agent system that evaluates academic manuscripts for patentability. You upload a PDF. AMIE reads it, decides whether it describes a concrete invention, searches for prior art, scores each reference against the invention's structure, and produces a novelty risk report.
 
-AMIE is a multi-agent system designed to evaluate academic manuscripts for patentability. It has an AWS-based backend with specialized AI agents (IDCA, NAA, AA).
-
-<img width="919" height="416" alt="image" src="https://github.com/user-attachments/assets/ab439df7-0ecc-4de1-97ab-2ea38abd6382" />
-
+<img width="919" height="416" alt="AMIE pipeline diagram" src="https://github.com/user-attachments/assets/ab439df7-0ecc-4de1-97ab-2ea38abd6382" />
 
 ---
 
-## 1. Prerequisites
+## What AMIE Does
 
-Before starting, ensure you have the following installed:
+The system answers one question: **does this manuscript describe something novel enough to patent?**
 
-- **AWS CLI**: [Installed and configured](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) with your credentials.
-- **AWS SAM CLI**: [Installed](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html) for backend deployment.
-- **Node.js (v18+)**: For the frontend.
-- **Python (3.10+)**: For backend development.
-- **Vercel CLI**: (Optional) if you want to deploy the frontend from your terminal.
+It answers that question through a four-agent pipeline:
 
----
+```
+User uploads PDF
+       |
+       v
+  [API Lambda] -- generates presigned S3 URL, creates task,
+       |           invokes Worker Lambda async
+       v
+  [Worker Lambda / Ingestion Agent]
+       |
+       |-- Extract PDF text from S3
+       |
+       |-- POST to IDCA --> SD, synopsis, fields, citation
+       |
+       |-- if SD == "Present":
+       |      POST to NAA --> structural decomposition,
+       |                       patent search, scored references
+       |
+       +-- POST to AA --> final report, novelty risk rating
 
-## 2. Backend Deployment (AWS SAM)
+  (state saved to S3 after each step; frontend polls GET /a2a/tasks/{id})
+```
 
-The backend must be deployed first to generate the API endpoints required by the frontend.
+### The Four Agents
 
-1. **Navigate to the backend directory:**
-   ```bash
-   cd backend
-   ```
+| Agent | File | Role |
+|-------|------|------|
+| **Ingestion** | `backend/agents/ingestion.py` | Orchestrator. Extracts PDF text, calls the other three agents in sequence over HTTP, saves pipeline state to S3 after each step. |
+| **IDCA** | `backend/agents/idca.py` | Invention Detection and Classification. Reads the manuscript and assigns a Status Determination: Present (concrete invention disclosed), Implied (something there but incomplete), or Absent (no invention). Also produces a structural synopsis, fields map, and citation. |
+| **NAA** | `backend/agents/naa.py` | Novelty Assessment. Only runs if SD == "Present". Decomposes the invention into structural blocks, builds a scoring rubric with weights, constructs a search query, calls Perplexity Sonar for prior art, then scores each reference with two metrics: CSS (conservative, penalizes unknowns) and EWSS (evidence-weighted, counts only what's evidenced). |
+| **AA** | `backend/agents/aa.py` | Aggregation. Compiles IDCA and NAA outputs into a Final Reference Table sorted by EWSS, an executive summary, and a novelty risk rating (High/Medium/Low/Indeterminate). |
 
-2. **Build the application:**
-   This command compiles dependencies and packages your code.
-   ```bash
-   sam build
-   ```
+### How the Agents Communicate
 
-3. **Deploy to AWS:**
-   If this is your first time, use the guided flag:
-   ```bash
-   sam deploy --guided
-   ```
-   **Guide through the prompts:**
-   - **Stack Name**: `amie-backend`
-   - **AWS Region**: `us-west-2` (recommended for Bedrock access)
-   - **Confirm changes before deploy**: Yes
-   - **Allow SAM CLI IAM role creation**: Yes
-   - **Save arguments to configuration file**: Yes
+Each agent is an independent AWS Lambda with its own API Gateway endpoint. They communicate using a lightweight Agent-to-Agent (A2A) protocol defined in `backend/a2a/protocol.py`. The Ingestion Agent POSTs an `A2ATask` to each agent's `/tasks` endpoint and receives an `A2AResponse`. Each agent also serves a self-description at `/.well-known/agent-card.json`.
 
-4. **Note the Outputs:**
-   After a successful deployment, SAM will print several URLs in the "Outputs" section. You specifically need the **`ApiUrl`**.
+### External Services
 
----
-
-## 3. Frontend Configuration & Deployment
-
-### Local Development
-1. **Navigate to the frontend directory:**
-   ```bash
-   cd frontend
-   ```
-
-2. **Create an environment file:**
-   Create a file named `.env.local` and paste the `ApiUrl` you got from the backend deployment:
-   ```bash
-   NEXT_PUBLIC_API_URL=https://your-api-id.execute-api.us-west-2.amazonaws.com/prod
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-4. **Run the development server:**
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) to see the app.
-
-### Vercel Deployment
-1. Connect your repository to Vercel.
-2. Set the **Root Directory** to `frontend`.
-3. Add the **Environment Variable**: 
-   - Key: `NEXT_PUBLIC_API_URL`
-   - Value: (The `ApiUrl` from SAM Outputs)
-4. Deploy.
+- **Claude Sonnet via Amazon Bedrock**: all three analytical agents (IDCA, NAA, AA) use this for reasoning
+- **Perplexity Sonar**: NAA uses this for patent and literature search (`backend/tools/perplexity_patents.py`)
 
 ---
 
-## 4. How the Application Works (User Flow)
+## Project Structure
 
-Once the app is running:
+```
+backend/
+  template.yaml          # SAM template: defines all AWS resources
+  samconfig.toml         # SAM deployment parameters
+  lambda_functions/
+    handler.py           # API Lambda (routing) + Worker Lambda (orchestration entry point)
+  agents/
+    ingestion.py         # Orchestrator: calls IDCA, NAA, AA over HTTP
+    idca.py              # Invention Detection and Classification Agent
+    naa.py               # Novelty Assessment Agent
+    aa.py                # Aggregation Agent
+  a2a/
+    protocol.py          # A2ATask, A2AResponse, AgentCard, TaskStatus
+  tools/
+    perplexity_patents.py  # Perplexity Sonar wrapper for patent search
+  utils/
+    pdf_extractor.py     # PDF text extraction (PyMuPDF or pdfminer)
+    s3_store.py          # S3-backed task state persistence
 
-1. **Upload**: Select an academic manuscript (PDF) on the homepage.
-2. **Analysis**: The app generates a presigned URL to upload the PDF to S3 and then triggers the **Ingestion Agent**.
-3. **Pipeline (A2A Architecture)**:
-   - **IDCA**: Detects if an invention is present.
-   - **NAA**: (If invention found) Builds a search query and scores references via Perplexity/Patents.
-   - **AA**: Compiles everything into a Final Reference Table.
-4. **Polling**: The frontend polls the backend every few seconds to show real-time progress (Pending → Running → IDCA Complete → NAA Complete → Complete).
-5. **Results**: Once complete, a full Novelty Assessment Report is displayed.
+frontend/               # Next.js application (Vercel)
+
+Architecture/           # Teaching documents about how this system works
+  01-SAM-and-Lambda.md       # How SAM and Lambda work in this project
+  02-Configuration-vs-Code.md  # Where configuration lives vs. where logic lives
+  03-A2A-Protocol.md         # How the agents communicate
+  04-Deployment.md           # How to deploy backend and frontend
+```
 
 ---
 
-## 5. Maintenance & Updates
+## Quick Start
 
-### Updating Backend Logic
-If you modify any code in `backend/agents/` or `backend/lambda_functions/`:
+### Prerequisites
+
+- **AWS CLI** configured with credentials
+- **AWS SAM CLI**
+- **Python 3.10+**
+- **Node.js v18+**
+- **Vercel CLI** (optional, for frontend deploy from terminal)
+
+### Deploy Backend
+
+```bash
+cd backend
+sam build
+sam deploy --guided
+```
+
+SAM will prompt for stack name (`amie`), region (`us-west-2` recommended for Bedrock), IAM role creation, and Perplexity API key. After deployment, note the `ApiUrl` from the Outputs section.
+
+### Deploy Frontend
+
+**Local development:**
+
+```bash
+cd frontend
+cp dotenv.local.example .env.local
+# Edit .env.local: set NEXT_PUBLIC_API_URL to the ApiUrl from SAM Outputs
+npm install
+npm run dev
+```
+
+**Vercel:**
+
+1. Connect the repository to Vercel
+2. Set Root Directory to `frontend`
+3. Add environment variable `NEXT_PUBLIC_API_URL` with the ApiUrl from SAM Outputs
+4. Deploy
+
+### Updating
+
+After modifying any backend code:
+
 ```bash
 cd backend
 sam build
 sam deploy
 ```
 
-### Adding Secrets (e.g. Perplexity API Key)
-If you need to update API keys used by the agents:
-1. Open `backend/template.yaml`.
-2. Locate the `Parameters` or `Environment Variables` section.
-3. Update the value.
-4. Redeploy using `sam deploy`.
+SAM reuses the parameters from `samconfig.toml` on subsequent deploys.
 
 ---
 
-## 6. Project Structure
+## Further Reading
 
-- `/backend`: AWS SAM project containing the serverless backend.
-  - `/agents`: The "brain" of the app (IDCA, NAA, AA logic).
-  - `/a2a`: Protocol definitions for Agent-to-Agent communication.
-  - `/lambda_functions`: Entry points and routing logic.
-- `/frontend`: Next.js application built with Tailwind CSS.
-- `template.yaml`: The Infrastructure-as-Code blueprint for your entire AWS backend.
+- **[Architecture/01-SAM-and-Lambda.md](Architecture/01-SAM-and-Lambda.md)**: How SAM and Lambda work in this project
+- **[Architecture/02-Configuration-vs-Code.md](Architecture/02-Configuration-vs-Code.md)**: Where configuration lives vs. where logic lives
+- **[Architecture/03-A2A-Protocol.md](Architecture/03-A2A-Protocol.md)**: How the agents communicate
+- **[Architecture/04-Deployment.md](Architecture/04-Deployment.md)**: Full deployment walkthrough with Vercel webhook and A2A verification
+- **[Architecture/architecture-diagrams.md](Architecture/architecture-diagrams.md)**: Mermaid diagrams of the system architecture
+- **[DOCUMENTATION.md](DOCUMENTATION.md)**: Detailed A2A protocol reference
 
