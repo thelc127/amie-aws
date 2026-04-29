@@ -15,7 +15,7 @@ Globals:
         MANUSCRIPT_BUCKET: !Ref ManuscriptBucket
         TASK_BUCKET: !Ref TaskBucket
         BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-20250514-v1:0"
-        PERPLEXITY_API_KEY: "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"
+        PERPLEXITY_API_KEY: !Ref PerplexityApiKey
         PERPLEXITY_PATENTS_ENDPOINT: "https://api.perplexity.ai/chat/completions"
         PERPLEXITY_MAX_RESULTS: "10"
         PATENT_BACKEND: "perplexity"
