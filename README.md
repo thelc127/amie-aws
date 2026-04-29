@@ -77,11 +77,12 @@ backend/
 
 frontend/               # Next.js application (Vercel)
 
-Architecture/           # Teaching documents about how this system works
+docs/                   # Teaching documents about how this system works
   01-SAM-and-Lambda.md       # How SAM and Lambda work in this project
   02-Configuration-vs-Code.md  # Where configuration lives vs. where logic lives
   03-A2A-Protocol.md         # How the agents communicate
   04-Deployment.md           # How to deploy backend and frontend
+  example_calls.sh           # Executable walkthrough of the full API flow
 ```
 
 ---
@@ -141,10 +142,10 @@ SAM reuses the parameters from `samconfig.toml` on subsequent deploys.
 
 ## Further Reading
 
-- **[Architecture/01-SAM-and-Lambda.md](Architecture/01-SAM-and-Lambda.md)**: How SAM and Lambda work in this project
-- **[Architecture/02-Configuration-vs-Code.md](Architecture/02-Configuration-vs-Code.md)**: Where configuration lives vs. where logic lives
-- **[Architecture/03-A2A-Protocol.md](Architecture/03-A2A-Protocol.md)**: How the agents communicate
-- **[Architecture/04-Deployment.md](Architecture/04-Deployment.md)**: Full deployment walkthrough with Vercel webhook and A2A verification
-- **[Architecture/architecture-diagrams.md](Architecture/architecture-diagrams.md)**: Mermaid diagrams of the system architecture
-- **[Architecture/DOCUMENTATION.md](Architecture/DOCUMENTATION.md)**: Detailed A2A protocol reference
+- **[docs/01-SAM-and-Lambda.md](docs/01-SAM-and-Lambda.md)**: How SAM and Lambda work in this project
+- **[docs/02-Configuration-vs-Code.md](docs/02-Configuration-vs-Code.md)**: Where configuration lives vs. where logic lives
+- **[docs/03-A2A-Protocol.md](docs/03-A2A-Protocol.md)**: How the agents communicate
+- **[docs/04-Deployment.md](docs/04-Deployment.md)**: Full deployment walkthrough with Vercel webhook and A2A verification
+- **[docs/architecture-diagrams.md](docs/architecture-diagrams.md)**: Mermaid diagrams of the system architecture
+- **[docs/DOCUMENTATION.md](docs/DOCUMENTATION.md)**: Detailed A2A protocol reference
 
