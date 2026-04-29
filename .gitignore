@@ -29,3 +29,5 @@ frontend/.vercel/
 
 # Claude
 .claude/
+CLAUDE_MEMORY.md
+MEMORY.md
