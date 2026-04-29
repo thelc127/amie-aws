@@ -146,5 +146,5 @@ SAM reuses the parameters from `samconfig.toml` on subsequent deploys.
 - **[Architecture/03-A2A-Protocol.md](Architecture/03-A2A-Protocol.md)**: How the agents communicate
 - **[Architecture/04-Deployment.md](Architecture/04-Deployment.md)**: Full deployment walkthrough with Vercel webhook and A2A verification
 - **[Architecture/architecture-diagrams.md](Architecture/architecture-diagrams.md)**: Mermaid diagrams of the system architecture
-- **[DOCUMENTATION.md](DOCUMENTATION.md)**: Detailed A2A protocol reference
+- **[Architecture/DOCUMENTATION.md](Architecture/DOCUMENTATION.md)**: Detailed A2A protocol reference
 
