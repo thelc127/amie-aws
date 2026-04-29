@@ -31,9 +31,8 @@ from utils.pdf_extractor import extract_text_from_s3
 
 logger = logging.getLogger(__name__)
 
-IDCA_URL = os.environ["IDCA_AGENT_URL"].rstrip("/")
-NAA_URL  = os.environ["NAA_AGENT_URL"].rstrip("/")
-AA_URL   = os.environ["AA_AGENT_URL"].rstrip("/")
+def _agent_url(name: str) -> str:
+    return os.environ[name].rstrip("/")
 
 
 def _dispatch(agent_url: str, task: A2ATask) -> A2AResponse:
@@ -66,8 +65,8 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
         manuscript_text = extract_text_from_s3(bucket, s3_key)
 
         # ── Stage 2: POST A2ATask to IDCA ─────────────────────────────────────
-        logger.info("Ingestion [%s]: dispatching A2A task to IDCA at %s", task_id, IDCA_URL)
-        idca_response = _dispatch(IDCA_URL, A2ATask(
+        logger.info("Ingestion [%s]: dispatching A2A task to IDCA at %s", task_id, _agent_url("IDCA_AGENT_URL"))
+        idca_response = _dispatch(_agent_url("IDCA_AGENT_URL"), A2ATask(
             agent="idca",
             input={"manuscript_text": manuscript_text},
         ))
@@ -84,8 +83,8 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
         # ── Stage 3: POST A2ATask to NAA (only if SD == Present) ──────────────
         naa_result = None
         if idca_result.get("sd") == "Present":
-            logger.info("Ingestion [%s]: dispatching A2A task to NAA at %s", task_id, NAA_URL)
-            naa_response = _dispatch(NAA_URL, A2ATask(
+            logger.info("Ingestion [%s]: dispatching A2A task to NAA at %s", task_id, _agent_url("NAA_AGENT_URL"))
+            naa_response = _dispatch(_agent_url("NAA_AGENT_URL"), A2ATask(
                 agent="naa",
                 input={
                     "manuscript_text": manuscript_text,
@@ -106,8 +105,8 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
             logger.info("Ingestion [%s]: skipping NAA (SD=%s)", task_id, idca_result.get("sd"))
 
         # ── Stage 4: POST A2ATask to AA ───────────────────────────────────────
-        logger.info("Ingestion [%s]: dispatching A2A task to AA at %s", task_id, AA_URL)
-        aa_response = _dispatch(AA_URL, A2ATask(
+        logger.info("Ingestion [%s]: dispatching A2A task to AA at %s", task_id, _agent_url("AA_AGENT_URL"))
+        aa_response = _dispatch(_agent_url("AA_AGENT_URL"), A2ATask(
             agent="aa",
             input={
                 "idca_result": idca_result,
