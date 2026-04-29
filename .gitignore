@@ -8,7 +8,7 @@ __pycache__/
 # AWS SAM build artifacts
 backend/.aws-sam/
 
-# Environment variables (never commit real secrets)
+# Environment variables
 .env
 .env.local
 .env.*.local
