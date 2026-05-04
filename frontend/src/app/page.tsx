@@ -317,7 +317,7 @@ export default function AMIEPage() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <h2 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
             <span className="text-indigo-500"><IconUpload /></span>
-            Upload Manuscript
+            Upload Manuscript Please:
           </h2>
 
           <div
