@@ -5,6 +5,7 @@ Location: backend/utils/s3_store.py
 Saves and loads task state as JSON files in S3.
 Simple alternative to DynamoDB for MVP.
 """
+from __future__ import annotations
 import json
 import logging
 

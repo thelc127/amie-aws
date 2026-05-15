@@ -5,20 +5,20 @@ Ingestion Agent — the A2A Orchestrator.
 
 Responsibilities:
   1. Extract text from the uploaded PDF (via S3)
-  2. POST an A2ATask to the IDCA agent endpoint → receive A2AResponse
-  3. If SD == "Present", POST an A2ATask to the NAA agent endpoint
-  4. POST an A2ATask to the AA agent endpoint → get final report
+  2. Invoke IDCA Lambda directly → receive A2AResponse
+  3. If SD == "Present", invoke NAA Lambda directly
+  4. Invoke AA Lambda directly → get final report
   5. Update task state in S3 at each step
 
-Each agent is an independent Lambda with its own HTTP endpoint.
-The orchestrator communicates with them over HTTP using the A2A protocol.
+Agents are invoked directly as Lambda functions (bypassing API Gateway)
+to avoid the 29-second API Gateway timeout on long-running agents.
 """
 import json
 import logging
 import os
 import sys
 
-import requests
+import boto3
 
 _THIS_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PARENT_DIR = os.path.dirname(_THIS_DIR)
@@ -31,20 +31,44 @@ from utils.pdf_extractor import extract_text_from_s3
 
 logger = logging.getLogger(__name__)
 
-def _agent_url(name: str) -> str:
-    return os.environ[name].rstrip("/")
+_lambda_client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION", "us-west-2"))
+
+IDCA_FUNCTION = os.environ.get("IDCA_FUNCTION_NAME", "amie-idca")
+NAA_FUNCTION  = os.environ.get("NAA_FUNCTION_NAME",  "amie-naa")
+AA_FUNCTION   = os.environ.get("AA_FUNCTION_NAME",   "amie-aa")
 
 
-def _dispatch(agent_url: str, task: A2ATask) -> A2AResponse:
-    """POST an A2ATask to an agent endpoint and return the A2AResponse."""
-    logger.info("A2A dispatch → %s/tasks  task_id=%s", agent_url, task.task_id)
-    resp = requests.post(
-        f"{agent_url}/tasks",
-        json=task.to_dict(),
-        timeout=870,
+def _dispatch(function_name: str, task: A2ATask) -> A2AResponse:
+    """Invoke an agent Lambda directly, bypassing API Gateway."""
+    logger.info("A2A dispatch → %s  task_id=%s", function_name, task.task_id)
+
+    event = {
+        "rawPath": "/tasks",
+        "requestContext": {"http": {"method": "POST"}},
+        "body": json.dumps(task.to_dict()),
+    }
+
+    response = _lambda_client.invoke(
+        FunctionName   = function_name,
+        InvocationType = "RequestResponse",
+        Payload        = json.dumps(event).encode(),
     )
-    resp.raise_for_status()
-    return A2AResponse.from_dict(resp.json())
+
+    payload = json.loads(response["Payload"].read())
+
+    if response.get("FunctionError"):
+        error_msg = payload.get("errorMessage", "Unknown Lambda error")
+        logger.error("Lambda %s FunctionError: %s", function_name, error_msg)
+        return A2AResponse(
+            task_id=task.task_id,
+            agent=function_name,
+            status=TaskStatus.ERROR,
+            output={},
+            error=f"Lambda error: {error_msg}",
+        )
+
+    body = json.loads(payload.get("body", "{}"))
+    return A2AResponse.from_dict(body)
 
 
 def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
@@ -52,6 +76,7 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
     Main orchestration function. Called by worker_handler in handler.py.
     Updates task state in S3 at every stage so frontend can poll progress.
     """
+
     task = store.load(task_id)
     if not task:
         logger.error("Ingestion: task %s not found in store", task_id)
@@ -65,8 +90,8 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
         manuscript_text = extract_text_from_s3(bucket, s3_key)
 
         # ── Stage 2: POST A2ATask to IDCA ─────────────────────────────────────
-        logger.info("Ingestion [%s]: dispatching A2A task to IDCA at %s", task_id, _agent_url("IDCA_AGENT_URL"))
-        idca_response = _dispatch(_agent_url("IDCA_AGENT_URL"), A2ATask(
+        logger.info("Ingestion [%s]: dispatching A2A task to IDCA → %s", task_id, IDCA_FUNCTION)
+        idca_response = _dispatch(IDCA_FUNCTION, A2ATask(
             agent="idca",
             input={"manuscript_text": manuscript_text},
         ))
@@ -83,8 +108,8 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
         # ── Stage 3: POST A2ATask to NAA (only if SD == Present) ──────────────
         naa_result = None
         if idca_result.get("sd") == "Present":
-            logger.info("Ingestion [%s]: dispatching A2A task to NAA at %s", task_id, _agent_url("NAA_AGENT_URL"))
-            naa_response = _dispatch(_agent_url("NAA_AGENT_URL"), A2ATask(
+            logger.info("Ingestion [%s]: dispatching A2A task to NAA → %s", task_id, NAA_FUNCTION)
+            naa_response = _dispatch(NAA_FUNCTION, A2ATask(
                 agent="naa",
                 input={
                     "manuscript_text": manuscript_text,
@@ -105,8 +130,8 @@ def run_ingestion(task_id: str, s3_key: str, bucket: str, store) -> None:
             logger.info("Ingestion [%s]: skipping NAA (SD=%s)", task_id, idca_result.get("sd"))
 
         # ── Stage 4: POST A2ATask to AA ───────────────────────────────────────
-        logger.info("Ingestion [%s]: dispatching A2A task to AA at %s", task_id, _agent_url("AA_AGENT_URL"))
-        aa_response = _dispatch(_agent_url("AA_AGENT_URL"), A2ATask(
+        logger.info("Ingestion [%s]: dispatching A2A task to AA → %s", task_id, AA_FUNCTION)
+        aa_response = _dispatch(AA_FUNCTION, A2ATask(
             agent="aa",
             input={
                 "idca_result": idca_result,

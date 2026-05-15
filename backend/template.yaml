@@ -6,7 +6,7 @@ Description: >
 
 Globals:
   Function:
-    Runtime: python3.13
+    Runtime: python3.9
     Timeout: 900
     MemorySize: 1024
     Environment:
@@ -17,7 +17,7 @@ Globals:
         BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-20250514-v1:0"
         PERPLEXITY_API_KEY: !Ref PerplexityApiKey
         PERPLEXITY_PATENTS_ENDPOINT: "https://api.perplexity.ai/chat/completions"
-        PERPLEXITY_MAX_RESULTS: "10"
+        PERPLEXITY_MAX_RESULTS: "20"
         PATENT_BACKEND: "perplexity"
 
 Parameters:
@@ -213,6 +213,8 @@ Resources:
       CodeUri: ./
       Handler: agents/naa.lambda_handler
       Role: !GetAtt LambdaRole.Arn
+      MemorySize: 3008
+      Timeout: 900
       Events:
         NaaTasks:
           Type: HttpApi

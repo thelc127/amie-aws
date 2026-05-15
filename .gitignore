@@ -27,6 +27,9 @@ frontend/.vercel/
 # OS
 .DS_Store
 
+# PDF files (test uploads, local copies)
+*.pdf
+
 # Claude
 .claude/
 CLAUDE_MEMORY.md

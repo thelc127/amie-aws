@@ -49,7 +49,7 @@ Return ONLY this JSON:
 }}"""
 
 
-def run_aa(idca_result: dict, naa_result: dict | None) -> dict:
+def run_aa(idca_result: dict, naa_result: "dict | None") -> dict:
     """Run the Aggregation Agent."""
 
     prompt = AA_TEMPLATE.format(

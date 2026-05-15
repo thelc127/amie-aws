@@ -81,9 +81,9 @@ class A2AResponse:
     @classmethod
     def from_dict(cls, data: dict) -> "A2AResponse":
         return cls(
-            task_id = data["task_id"],
-            agent   = data["agent"],
-            status  = data["status"],
+            task_id = data.get("task_id", ""),
+            agent   = data.get("agent", ""),
+            status  = data.get("status", TaskStatus.ERROR),
             output  = data.get("output", {}),
             error   = data.get("error", ""),
         )
