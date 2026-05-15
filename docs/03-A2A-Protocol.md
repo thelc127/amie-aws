@@ -56,27 +56,44 @@ The entire message flow happens in `backend/agents/ingestion.py`, specifically i
 
 1. The Ingestion Agent constructs an `A2ATask` with the target agent name and input payload.
 
-2. It serializes the task to JSON and POSTs it to `{agent_url}/tasks`.
+2. It serializes the task to JSON and invokes the target agent Lambda directly using `boto3.client("lambda").invoke()`, passing the task as the event body.
 
-3. The target agent's `lambda_handler` deserializes the JSON back into an `A2ATask`, extracts the input, runs its analysis, and wraps the result in an `A2AResponse`.
+3. The target agent's `lambda_handler` deserializes the event back into an `A2ATask`, extracts the input, runs its analysis, and wraps the result in an `A2AResponse`.
 
-4. The Ingestion Agent deserializes the HTTP response into an `A2AResponse` and checks `status`. If `ERROR`, it raises an exception. If `COMPLETE`, it extracts `output` and continues the pipeline.
+4. The Ingestion Agent reads the Lambda response payload, deserializes it into an `A2AResponse`, and checks `status`. If `ERROR`, it raises an exception. If `COMPLETE`, it extracts `output` and continues the pipeline.
 
 Here is the dispatch helper:
 
 ```python
-# backend/agents/ingestion.py, line 39
-def _dispatch(agent_url: str, task: A2ATask) -> A2AResponse:
-    resp = requests.post(
-        f"{agent_url}/tasks",
-        json=task.to_dict(),
-        timeout=870,
+# backend/agents/ingestion.py
+def _dispatch(function_name: str, task: A2ATask) -> A2AResponse:
+    event = {
+        "rawPath": "/tasks",
+        "requestContext": {"http": {"method": "POST"}},
+        "body": json.dumps(task.to_dict()),
+    }
+    response = _lambda_client.invoke(
+        FunctionName   = function_name,
+        InvocationType = "RequestResponse",
+        Payload        = json.dumps(event).encode(),
     )
-    resp.raise_for_status()
-    return A2AResponse.from_dict(resp.json())
+    payload = json.loads(response["Payload"].read())
+
+    if response.get("FunctionError"):
+        error_msg = payload.get("errorMessage", "Unknown Lambda error")
+        return A2AResponse(
+            task_id=task.task_id,
+            agent=function_name,
+            status=TaskStatus.ERROR,
+            output={},
+            error=f"Lambda error: {error_msg}",
+        )
+
+    body = json.loads(payload.get("body", "{}"))
+    return A2AResponse.from_dict(body)
 ```
 
-The 870-second timeout is just under Lambda's 900-second maximum, giving a small buffer.
+Direct Lambda invocation has no timeout imposed by API Gateway. The Worker Lambda (`amie-worker`) can wait up to its full 900-second timeout for any agent to finish.
 
 ### The Full Sequence
 
@@ -135,12 +152,12 @@ if raw_path.endswith("/.well-known/agent-card.json"):
 
 In the current implementation, the Ingestion Agent does not fetch agent cards before calling agents. The URLs are injected via environment variables at deploy time. The cards are available for external discovery and documentation.
 
-## Why HTTP Instead of Direct Lambda Invocation
+## Why Direct Lambda Invocation Instead of HTTP
 
-The agents could call each other using `boto3.client("lambda").invoke()` directly, skipping HTTP entirely. This system uses HTTP for two reasons:
+The Ingestion Agent invokes IDCA, NAA, and AA using `boto3.client("lambda").invoke()` directly rather than HTTP calls through each agent's API Gateway endpoint. The reason is the **API Gateway 29-second timeout**.
 
-1. **A2A compliance.** The agent-card-plus-POST-tasks pattern follows the emerging Agent-to-Agent protocol convention. If you later want to expose these agents to external systems, or replace one agent with a service running outside AWS, the HTTP interface already works.
+The NAA agent consistently takes 35–40 seconds because it makes multiple sequential calls to Amazon Bedrock (one for structural decomposition, one per patent reference) plus one call to the Perplexity API. When inter-agent calls were routed through API Gateway, the gateway cut the connection after 29 seconds and returned a 503 error to the caller before NAA could finish.
 
-2. **Observability.** HTTP calls through API Gateway produce access logs, latency metrics, and error rates per agent endpoint. Direct Lambda invocation produces only CloudWatch logs on the calling side.
+Direct Lambda invocation bypasses API Gateway entirely — there is no intermediate timeout. The Worker Lambda waits for each agent to return for up to its own 900-second limit.
 
-The cost is an extra network hop per agent call (Lambda to API Gateway to Lambda instead of Lambda to Lambda). For a pipeline that takes 1-3 minutes total, the overhead of three additional API Gateway hops (milliseconds each) is not meaningful.
+Each agent Lambda still has its own API Gateway endpoint (defined in `template.yaml`). Those endpoints remain available for external discovery and manual testing via curl, but the internal pipeline does not use them.

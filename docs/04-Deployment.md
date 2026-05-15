@@ -12,7 +12,7 @@ Install these before you start:
 |------|---------|---------|
 | AWS CLI | Authenticate with AWS | `brew install awscli` or [AWS docs](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) |
 | AWS SAM CLI | Build and deploy the backend | `brew install aws-sam-cli` or [SAM docs](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html) |
-| Python 3.10+ | Backend runtime | `brew install python@3.10` |
+| Python 3.9 | Backend runtime | Included on macOS; SAM builds against this version |
 | Node.js v18+ | Frontend build | `brew install node` |
 
 Configure AWS credentials:
@@ -28,11 +28,18 @@ Verify Bedrock access in your account. AMIE uses `us.anthropic.claude-sonnet-4-2
 
 ## Step 1: Deploy the Backend
 
-### First-time Deploy
+### First-time Setup
+
+Create a `.env` file in the project root (never committed to git) with your Perplexity API key:
+
+```
+PERPLEXITY_API_KEY=your-key-here
+```
+
+If `samconfig.toml` does not exist yet, run the guided wizard once to generate it:
 
 ```bash
 cd backend
-sam build
 sam deploy --guided
 ```
 
@@ -40,13 +47,23 @@ SAM will prompt for these values:
 
 | Prompt | Recommended Value | Notes |
 |--------|-------------------|-------|
-| Stack Name | `amie` | Matches `samconfig.toml` |
+| Stack Name | `amie` | Saved to `samconfig.toml` |
 | AWS Region | `us-west-2` | Must have Bedrock access |
-| Parameter PerplexityApiKey | Your Perplexity API key | Stored as a NoEcho parameter; not visible in logs |
 | Parameter AllowedOrigin | `*` (or your Vercel domain) | CORS origin for the public API |
 | Confirm changes before deploy | `y` | Review the changeset before applying |
 | Allow SAM CLI IAM role creation | `y` | Required for the shared Lambda role |
 | Save arguments to configuration file | `y` | Saves to `samconfig.toml` for future deploys |
+
+Note: do not enter the Perplexity key during the guided wizard — leave it blank. The `deploy.sh` script injects it from `.env` on every deploy.
+
+### All Deploys (first-time and subsequent)
+
+```bash
+cd backend
+./deploy.sh
+```
+
+`deploy.sh` reads the Perplexity API key from the project root `.env` file and passes it securely to SAM via `--parameter-overrides`. All other parameters (stack name, region, IAM settings) are read from `samconfig.toml`. The script runs `sam build` followed by `sam deploy` automatically.
 
 After deploy, SAM prints an Outputs section:
 
@@ -63,26 +80,9 @@ TaskBucketName      amie-tasks-123456789-us-west-2
 
 Copy the **ApiUrl**. The frontend needs it.
 
-### Subsequent Deploys
-
-After changing backend code:
-
-```bash
-cd backend
-sam build
-sam deploy
-```
-
-SAM reads saved parameters from `samconfig.toml`. No prompts unless you add new parameters.
-
 ### Updating the Perplexity Key
 
-```bash
-cd backend
-sam deploy --parameter-overrides "PerplexityApiKey=sk-new-key AllowedOrigin=*"
-```
-
-You must include all parameter overrides, not just the one you're changing.
+Update the value in your local `.env` file and run `./deploy.sh`. The new key will be picked up automatically.
 
 ---
 
@@ -215,7 +215,7 @@ curl https://abc123.execute-api.us-west-2.amazonaws.com/prod/a2a/tasks/<task_id>
 
 ### "sam build" fails with dependency errors
 
-Check `backend/requirements.txt`. Make sure you're running Python 3.10+. SAM installs dependencies in a Docker container by default; if Docker isn't running, try `sam build --use-container` or ensure your local Python matches the Lambda runtime.
+Check `backend/requirements.txt`. The Lambda runtime is Python 3.9 — ensure your local Python version matches. SAM installs dependencies in a Docker container by default; if Docker isn't running, try `sam build --use-container` or ensure your local Python matches the Lambda runtime.
 
 ### Lambda times out
 
@@ -235,10 +235,11 @@ Your AWS account needs model access enabled for the specified model. Go to AWS C
 
 ### Perplexity returns 401
 
-The API key is invalid or missing. Redeploy with the correct key:
+The API key is invalid or missing. Update the key in your local `.env` file and redeploy:
 
 ```bash
-sam deploy --parameter-overrides "PerplexityApiKey=sk-correct-key AllowedOrigin=*"
+cd backend
+./deploy.sh
 ```
 
 ---
