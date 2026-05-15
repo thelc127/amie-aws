@@ -23,13 +23,13 @@ User uploads PDF
        |
        |-- Extract PDF text from S3
        |
-       |-- POST to IDCA --> SD, synopsis, fields, citation
+       |-- invoke IDCA Lambda directly --> SD, synopsis, fields, citation
        |
        |-- if SD == "Present":
-       |      POST to NAA --> structural decomposition,
-       |                       patent search, scored references
+       |      invoke NAA Lambda directly --> structural decomposition,
+       |                                     patent search, scored references
        |
-       +-- POST to AA --> final report, novelty risk rating
+       +-- invoke AA Lambda directly --> final report, novelty risk rating
 
   (state saved to S3 after each step; frontend polls GET /a2a/tasks/{id})
 ```
@@ -38,14 +38,14 @@ User uploads PDF
 
 | Agent | File | Role |
 |-------|------|------|
-| **Ingestion** | `backend/agents/ingestion.py` | Orchestrator. Extracts PDF text, calls the other three agents in sequence over HTTP, saves pipeline state to S3 after each step. |
+| **Ingestion** | `backend/agents/ingestion.py` | Orchestrator. Extracts PDF text, invokes IDCA, NAA, and AA Lambda functions directly via boto3 (bypassing API Gateway), and saves pipeline state to S3 after each step. |
 | **IDCA** | `backend/agents/idca.py` | Invention Detection and Classification. Reads the manuscript and assigns a Status Determination: Present (concrete invention disclosed), Implied (something there but incomplete), or Absent (no invention). Also produces a structural synopsis, fields map, and citation. |
 | **NAA** | `backend/agents/naa.py` | Novelty Assessment. Only runs if SD == "Present". Decomposes the invention into structural blocks, builds a scoring rubric with weights, constructs a search query, calls Perplexity Sonar for prior art, then scores each reference with two metrics: CSS (conservative, penalizes unknowns) and EWSS (evidence-weighted, counts only what's evidenced). |
 | **AA** | `backend/agents/aa.py` | Aggregation. Compiles IDCA and NAA outputs into a Final Reference Table sorted by EWSS, an executive summary, and a novelty risk rating (High/Medium/Low/Indeterminate). |
 
 ### How the Agents Communicate
 
-Each agent is an independent AWS Lambda with its own API Gateway endpoint. They communicate using a lightweight Agent-to-Agent (A2A) protocol defined in `backend/a2a/protocol.py`. The Ingestion Agent POSTs an `A2ATask` to each agent's `/tasks` endpoint and receives an `A2AResponse`. Each agent also serves a self-description at `/.well-known/agent-card.json`.
+Each agent is an independent AWS Lambda with its own API Gateway endpoint. They communicate using a lightweight Agent-to-Agent (A2A) protocol defined in `backend/a2a/protocol.py`. The Ingestion Agent invokes each agent Lambda directly using `boto3.client("lambda").invoke()`, passing an `A2ATask` as the event payload and receiving an `A2AResponse` in return. Direct Lambda invocation is used instead of HTTP calls through API Gateway to avoid the 29-second API Gateway timeout, which NAA regularly exceeds. Each agent also serves a self-description at `/.well-known/agent-card.json`.
 
 ### External Services
 
@@ -63,7 +63,7 @@ backend/
   lambda_functions/
     handler.py           # API Lambda (routing) + Worker Lambda (orchestration entry point)
   agents/
-    ingestion.py         # Orchestrator: calls IDCA, NAA, AA over HTTP
+    ingestion.py         # Orchestrator: invokes IDCA, NAA, AA Lambda functions directly via boto3
     idca.py              # Invention Detection and Classification Agent
     naa.py               # Novelty Assessment Agent
     aa.py                # Aggregation Agent
@@ -93,19 +93,28 @@ docs/                   # Teaching documents about how this system works
 
 - **AWS CLI** configured with credentials
 - **AWS SAM CLI**
-- **Python 3.10+**
+- **Python 3.9**
 - **Node.js v18+**
 - **Vercel CLI** (optional, for frontend deploy from terminal)
 
 ### Deploy Backend
 
-```bash
-cd backend
-sam build
-sam deploy --guided
+First, create a `.env` file in the project root with your Perplexity API key:
+
+```
+PERPLEXITY_API_KEY=your-key-here
 ```
 
-SAM will prompt for stack name (`amie`), region (`us-west-2` recommended for Bedrock), IAM role creation, and Perplexity API key. After deployment, note the `ApiUrl` from the Outputs section.
+Then deploy using the provided script, which reads the key from `.env` and passes it securely to SAM:
+
+```bash
+cd backend
+./deploy.sh
+```
+
+`deploy.sh` runs `sam build` followed by `sam deploy`, reading all other parameters (stack name, region, IAM settings) from `samconfig.toml`. After deployment, note the `ApiUrl` from the Outputs section.
+
+**First-time setup only:** if `samconfig.toml` does not exist yet, run `sam deploy --guided` once to generate it, then use `./deploy.sh` for all subsequent deploys.
 
 ### Deploy Frontend
 
@@ -132,11 +141,10 @@ After modifying any backend code:
 
 ```bash
 cd backend
-sam build
-sam deploy
+./deploy.sh
 ```
 
-SAM reuses the parameters from `samconfig.toml` on subsequent deploys.
+This rebuilds and redeploys all Lambda functions, reading the Perplexity API key from `.env` and all other parameters from `samconfig.toml`.
 
 ---
 
